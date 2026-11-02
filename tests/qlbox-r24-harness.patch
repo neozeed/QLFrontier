@@ -1,0 +1,49 @@
+--- dependencies/src/main.c	2026-10-27 08:48:14.000000000 +0100
++++ dependencies/tests/frontier_main.c	2026-11-02 20:52:29.868466120 +0100
+@@ -1,3 +1,4 @@
++#include "m68k.h"
+ #define _POSIX_C_SOURCE 200809L
+ #include "ql.h"
+ #include "hostfs.h"
+@@ -664,6 +665,29 @@
+             }
+         }
+         modem_poll();
++        {
++            static FILE *ev;
++            static int loaded, frame, key, mods, down, have;
++            if (!loaded) {
++                loaded=1;
++                const char *path=getenv("FRONTIER_EVENTS");
++                if(path) ev=fopen(path,"r");
++                if(ev) have=fscanf(ev,"%d %i %i %d",&frame,&key,&mods,&down)==4;
++            }
++            while(have && ql.frame >= (unsigned)frame) {
++                if(key == -1) ql_mouse_event(&ql.mouse,mods,down,0,0);
++                else if(key == -2) ql_mouse_event(&ql.mouse,0,0,0,(unsigned)mods);
++                else ql_key((unsigned)key,(unsigned)mods,down);
++                have=fscanf(ev,"%d %i %i %d",&frame,&key,&mods,&down)==4;
++            }
++        }
++        if (getenv("FRONTIER_SNAPSHOTS") && ql.frame >= 1600 && ql.frame <= 3700 && ql.frame % 25 == 0) {
++            char path[256];
++            snprintf(path,sizeof(path),"%s-%u.ram",getenv("FRONTIER_SNAPSHOTS"),ql.frame);
++            ql_dump(path);
++            snprintf(path,sizeof(path),"%s-%u.ppm",getenv("FRONTIER_SNAPSHOTS"),ql.frame);
++            ql_ppm(path);
++        }
+         ql_frame();
+         if (ql.exit_requested)
+             break;
+@@ -724,7 +748,10 @@
+         }
+         fclose(input);
+     }
+-    if (dump && !ql_ppm(dump)) {
++    fprintf(stderr,"PC=%08x SP=%08x SR=%04x\n",m68k_get_reg(NULL,M68K_REG_PC),m68k_get_reg(NULL,M68K_REG_SP),m68k_get_reg(NULL,M68K_REG_SR));
++ for(int r=0;r<16;r++) fprintf(stderr,"r%d=%08x ",r,m68k_get_reg(NULL,M68K_REG_D0+r));
++ fprintf(stderr,"\n");
++ if (dump && !ql_ppm(dump)) {
+         perror(dump);
+         result = 1;
+     }
