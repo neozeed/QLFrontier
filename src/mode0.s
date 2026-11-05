@@ -151,32 +151,87 @@ text_row_found:
  move.w d7,d0
  lsl.w #7,d0
  adda.w d0,a1
- moveq #0,d2
  moveq #39,d6
 text_word:
+ move.b (a0)+,d3
+ beq mode0_word_skip
  move.w (a1),d1
- moveq #0,d5
-text_pixel:
- move.w d2,d4
- lsr.w #3,d4
- btst d2,0(a0,d4.w)
- beq text_pixel_next
- move.w #$8080,d0
- lsr.w d5,d0
- tst.b 0(a2,d2.w)
- bne text_pixel_white
- not.w d0
- and.w d0,d1
- bra text_pixel_next
-text_pixel_white:
- or.w d0,d1
-text_pixel_next:
- addq.w #1,d2
- addq.w #1,d5
-text_pixel_step:
- cmp.w #8,d5
- bne text_pixel
- move.w d1,(a1)+
+ btst #0,d3
+ beq mode0_pixel_skip_0
+ tst.b 0(a2)
+ bne mode0_pixel_white_0
+ and.w #$7f7f,d1
+ bra mode0_pixel_skip_0
+mode0_pixel_white_0:
+ or.w #$8080,d1
+mode0_pixel_skip_0:
+ btst #1,d3
+ beq mode0_pixel_skip_1
+ tst.b 1(a2)
+ bne mode0_pixel_white_1
+ and.w #$bfbf,d1
+ bra mode0_pixel_skip_1
+mode0_pixel_white_1:
+ or.w #$4040,d1
+mode0_pixel_skip_1:
+ btst #2,d3
+ beq mode0_pixel_skip_2
+ tst.b 2(a2)
+ bne mode0_pixel_white_2
+ and.w #$dfdf,d1
+ bra mode0_pixel_skip_2
+mode0_pixel_white_2:
+ or.w #$2020,d1
+mode0_pixel_skip_2:
+ btst #3,d3
+ beq mode0_pixel_skip_3
+ tst.b 3(a2)
+ bne mode0_pixel_white_3
+ and.w #$efef,d1
+ bra mode0_pixel_skip_3
+mode0_pixel_white_3:
+ or.w #$1010,d1
+mode0_pixel_skip_3:
+ btst #4,d3
+ beq mode0_pixel_skip_4
+ tst.b 4(a2)
+ bne mode0_pixel_white_4
+ and.w #$f7f7,d1
+ bra mode0_pixel_skip_4
+mode0_pixel_white_4:
+ or.w #$0808,d1
+mode0_pixel_skip_4:
+ btst #5,d3
+ beq mode0_pixel_skip_5
+ tst.b 5(a2)
+ bne mode0_pixel_white_5
+ and.w #$fbfb,d1
+ bra mode0_pixel_skip_5
+mode0_pixel_white_5:
+ or.w #$0404,d1
+mode0_pixel_skip_5:
+ btst #6,d3
+ beq mode0_pixel_skip_6
+ tst.b 6(a2)
+ bne mode0_pixel_white_6
+ and.w #$fdfd,d1
+ bra mode0_pixel_skip_6
+mode0_pixel_white_6:
+ or.w #$0202,d1
+mode0_pixel_skip_6:
+ btst #7,d3
+ beq mode0_pixel_skip_7
+ tst.b 7(a2)
+ bne mode0_pixel_white_7
+ and.w #$fefe,d1
+ bra mode0_pixel_skip_7
+mode0_pixel_white_7:
+ or.w #$0101,d1
+mode0_pixel_skip_7:
+ move.w d1,(a1)
+mode0_word_skip:
+ addq.l #2,a1
+ addq.l #8,a2
  dbra d6,text_word
 text_present_done:
  movem.l (a7)+,d0-d6/a0-a5

@@ -54,20 +54,19 @@ hud_redirect:
 hud_clear_rows:
  clr.l (a0)+
  dbra d0,hud_clear_rows
- lea native_rows,a0
- moveq #49,d0
-native_clear_rows:
- clr.l (a0)+
- dbra d0,native_clear_rows
- lea native_text,a0
- move.w #12799,d0
-native_clear_text:
- clr.l (a0)+
- dbra d0,native_clear_text
+ bsr native_clear_used_rows
  lea hud_buffer,a0
- move.w #15999,d0
+ moveq #0,d1
+ move.w #1999,d0
 hud_clear:
- clr.l (a0)+
+ move.l d1,(a0)+
+ move.l d1,(a0)+
+ move.l d1,(a0)+
+ move.l d1,(a0)+
+ move.l d1,(a0)+
+ move.l d1,(a0)+
+ move.l d1,(a0)+
+ move.l d1,(a0)+
  dbra d0,hud_clear
  movem.l L5d9e_logscreen,d0-d3
  movem.l d0-d3,hud_saved_screens
@@ -325,6 +324,79 @@ native_position_store:
  move.w d2,native_y
  movem.l (a7)+,d0/d2
  rts
+* Clear complete used text rows; rows not marked have remained transparent.
+native_clear_used_rows:
+ lea native_rows,a0
+ lea native_text,a1
+ moveq #0,d2
+ move.w #199,d0
+native_clear_row:
+ tst.b (a0)+
+ beq native_clear_row_empty
+ clr.b -1(a0)
+ moveq #7,d1
+native_clear_block:
+ move.l d2,(a1)+
+ move.l d2,(a1)+
+ move.l d2,(a1)+
+ move.l d2,(a1)+
+ move.l d2,(a1)+
+ move.l d2,(a1)+
+ move.l d2,(a1)+
+ move.l d2,(a1)+
+ dbra d1,native_clear_block
+ bra native_clear_row_next
+native_clear_row_empty:
+ adda.w #256,a1
+native_clear_row_next:
+ dbra d0,native_clear_row
+ rts
+* d0=x, d2=y (already clipped), d6=width. Scratch d3-d5/a3 only.
+* Out-of-range x gets conservative full-row bounds, preserving wrap behaviour.
+native_mark_span:
+ moveq #0,d4
+ move.w d0,d4
+ move.w d4,d5
+ cmp.w #256,d4
+ bcc native_mark_full
+ add.w d6,d5
+ cmp.w d4,d5
+ bne native_mark_end
+ addq.w #1,d5
+native_mark_end:
+ cmp.w #256,d5
+ bls native_mark_ready
+ move.w #256,d5
+ bra native_mark_ready
+native_mark_full:
+ moveq #0,d4
+ move.w #256,d5
+native_mark_ready:
+ moveq #0,d3
+ move.w d2,d3
+ lea native_rows,a3
+ tst.b 0(a3,d3.w)
+ bne native_mark_merge
+ st 0(a3,d3.w)
+ add.w d3,d3
+ lea native_left,a3
+ move.w d4,0(a3,d3.w)
+ lea native_right,a3
+ move.w d5,0(a3,d3.w)
+ rts
+native_mark_merge:
+ add.w d3,d3
+ lea native_left,a3
+ cmp.w 0(a3,d3.w),d4
+ bcc native_mark_right
+ move.w d4,0(a3,d3.w)
+native_mark_right:
+ lea native_right,a3
+ cmp.w 0(a3,d3.w),d5
+ bls native_mark_done
+ move.w d5,0(a3,d3.w)
+native_mark_done:
+ rts
 native_text_char:
  movem.l d0/d2-d7/a0-a3,-(a7)
  sub.w #32,d3
@@ -339,8 +411,7 @@ native_text_char:
 native_glyph_row:
  cmp.w #200,d2
  bcc native_glyph_next
- lea native_rows,a3
- st 0(a3,d2.w)
+ bsr native_mark_span
  lea native_text,a1
  move.w d2,d3
  lsl.l #8,d3
@@ -392,26 +463,62 @@ native_present_text:
  move.w d7,d0
  lsl.w #7,d0
  adda.w d0,a1
- moveq #63,d6
+ * Round occupied bounds outward to the four-pixel Mode 8 word.
+ move.w d7,d0
+ add.w d0,d0
+ lea native_left,a2
+ moveq #0,d2
+ move.w 0(a2,d0.w),d2
+ and.w #$fffc,d2
+ lea native_right,a2
+ move.w 0(a2,d0.w),d6
+ addq.w #3,d6
+ and.w #$fffc,d6
+ sub.w d2,d6
+ beq native_row_done
+ adda.w d2,a0
+ lsr.w #1,d2
+ adda.w d2,a1
+ lsr.w #2,d6
+ subq.w #1,d6
 native_text_word:
  move.w (a1),d1
- moveq #0,d5
- moveq #3,d4
-native_text_pixel:
  move.b (a0)+,d3
- beq native_text_skip
- move.w #$80c0,d0
- lsr.w d5,d0
+ beq native_skip_0
  cmp.b #2,d3
- beq native_text_white
- not.w d0
- and.w d0,d1
- bra native_text_skip
-native_text_white:
- or.w d0,d1
-native_text_skip:
- addq.w #2,d5
- dbra d4,native_text_pixel
+ beq native_white_0
+ and.w #$7f3f,d1
+ bra native_skip_0
+native_white_0:
+ or.w #$80c0,d1
+native_skip_0:
+ move.b (a0)+,d3
+ beq native_skip_1
+ cmp.b #2,d3
+ beq native_white_1
+ and.w #$dfcf,d1
+ bra native_skip_1
+native_white_1:
+ or.w #$2030,d1
+native_skip_1:
+ move.b (a0)+,d3
+ beq native_skip_2
+ cmp.b #2,d3
+ beq native_white_2
+ and.w #$f7f3,d1
+ bra native_skip_2
+native_white_2:
+ or.w #$080c,d1
+native_skip_2:
+ move.b (a0)+,d3
+ beq native_skip_3
+ cmp.b #2,d3
+ beq native_white_3
+ and.w #$fdfc,d1
+ bra native_skip_3
+native_white_3:
+ or.w #$0203,d1
+native_skip_3:
  move.w d1,(a1)+
  dbra d6,native_text_word
 native_row_done:
@@ -425,17 +532,20 @@ hud_message:
  bne hud_message_return
  btst #1,115(a6)
  beq hud_message_return
- lea native_rows+168,a0
  lea native_text+43072,a1
- moveq #31,d0
+ moveq #64,d0
+ move.w #168,d2
+ move.w #192,d6
+ moveq #31,d7
 hud_message_back_row:
- st (a0)+
+ bsr native_mark_span
  moveq #47,d1
 hud_message_back_word:
  move.l #$01010101,(a1)+
  dbra d1,hud_message_back_word
  adda.w #64,a1
- dbra d0,hud_message_back_row
+ addq.w #1,d2
+ dbra d7,hud_message_back_row
  movem.l 11690(a6),d0-d3/d7/a2-a3
  tst.w d7
  bmi hud_message_plain

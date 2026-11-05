@@ -10,6 +10,7 @@ a=shared.index('ql_build_dither:');b=shared.index('* Four planes',a)
 shared=shared[:a]+shared[b:]
 shared=shared[:shared.index('expand_colour:')]
 shared=shared.replace(' jsr menu_cache_colour\n','').replace('main_dither+32,a1','main_dither+1024,a1')
+shared=shared.replace(' cmp.l #512,d1',' cmp.l #16384,d1').replace('palette_key_index:\n','palette_key_index:\n lsr.l #5,d1\n').replace('palette_key_hit:\n addq.l #2,a1','palette_key_hit:\n adda.w #64,a1')
 a=shared.index(' tst.w hud_redirected\n beq legacy_game_buffer');b=shared.index('legacy_game_buffer:',a)
 shared=shared[:a]+shared[b:]
 # Same nearest-colour table as prototype01, unpacked from the shared generator.

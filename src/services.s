@@ -15,10 +15,7 @@ fill_buffer:
  tst.l d1
  beq service_done
  jsr text_clear_span
-fill_loop:
- move.b d0,(a0)+
- subq.l #1,d1
- bne fill_loop
+ bra fill_bytes
 service_done:
  rts
 impl_Call_Memcpy:
@@ -80,10 +77,7 @@ impl_Call_PutPix:
  jsr hud_mark_a0
  move.w (a4),d0
  lsr.w #2,d0
- movem.l d1,-(a7)
- moveq #1,d1
- jsr text_clear_span
- movem.l (a7)+,d1
+ jsr text_clear_pixel_at_a0
  move.b d0,(a0)
  rts
 impl_Call_FillLine:
@@ -104,25 +98,59 @@ back_span:
  bcc back_next
  tst.b (a0)
  bne back_next
- movem.l d1,-(a7)
- moveq #1,d1
- jsr text_clear_span
- movem.l (a7)+,d1
+ jsr text_clear_pixel_at_a0
  move.b d0,(a0)
 back_next:
  addq.l #1,a0
  dbra d1,back_span
  rts
-* Byte fill; retain exact index values for scanner readback.
+* Preserve indexed pixels; batch only their memory stores.
 draw_span:
  jsr text_clear_span
  jsr hud_mark_a0
- tst.w d1
+ and.l #$ffff,d1
+fill_bytes:
+ tst.l d1
  beq service_done
-span_loop:
+ cmp.l #8,d1
+ bcs fill_bytes_tail
+ move.l a0,d2
+ btst #0,d2
+ beq fill_bytes_aligned
  move.b d0,(a0)+
- subq.w #1,d1
- bne span_loop
+ subq.l #1,d1
+fill_bytes_aligned:
+ moveq #0,d2
+ move.b d0,d2
+ move.w d2,d3
+ lsl.w #8,d2
+ or.w d3,d2
+ move.w d2,d3
+ swap d2
+ move.w d3,d2
+ cmp.l #16,d1
+ bcs fill_bytes_longs
+fill_bytes_block:
+ move.l d2,(a0)+
+ move.l d2,(a0)+
+ move.l d2,(a0)+
+ move.l d2,(a0)+
+ sub.l #16,d1
+ cmp.l #16,d1
+ bcc fill_bytes_block
+fill_bytes_longs:
+ cmp.l #4,d1
+ bcs fill_bytes_tail
+ move.l d2,(a0)+
+ subq.l #4,d1
+ bra fill_bytes_longs
+fill_bytes_tail:
+ tst.l d1
+ beq service_done
+fill_bytes_byte:
+ move.b d0,(a0)+
+ subq.l #1,d1
+ bne fill_bytes_byte
  rts
 impl_Call_SetScreenBase:
  move.l (a4),display_buffer
@@ -144,11 +172,7 @@ palette_next:
  moveq #0,d0
  move.w (a0)+,d0
  and.w #$fff,d0
- jsr menu_cache_colour
- lsl.l #4,d0
- lea rgb_dither,a2
- adda.l d0,a2
- bsr expand_colour
+ bsr palette_colour
  dbra d7,palette_next
  rts
 impl_Call_MakeExtPalette:
@@ -162,13 +186,35 @@ ext_palette_next:
  moveq #0,d0
  move.w (a0)+,d0
  and.w #$fff,d0
+ bsr palette_colour
+ add.w #64,(a0)+
+ dbra d7,ext_palette_next
+ rts
+* One valid RGB444 key per destination colour, including extended colours.
+* Bit 15 marks validity so the initial black upload still populates tables.
+palette_colour:
+ move.l a1,d1
+ sub.l #main_dither,d1
+ lea main_palette_keys,a3
+ cmp.l #512,d1
+ bcs palette_key_index
+ move.l a1,d1
+ sub.l #panel_dither,d1
+ lea panel_palette_keys,a3
+palette_key_index:
+ * Mode 0 scales its 64-byte expanded entries to two-byte keys here.
+ move.w d0,d2
+ or.w #$8000,d2
+ cmp.w 0(a3,d1.w),d2
+ beq palette_key_hit
+ move.w d2,0(a3,d1.w)
  jsr menu_cache_colour
  lsl.l #4,d0
  lea rgb_dither,a2
  adda.l d0,a2
- bsr expand_colour
- add.w #64,(a0)+
- dbra d7,ext_palette_next
+ jmp expand_colour
+palette_key_hit:
+ addq.l #2,a1
  rts
 ql_build_dither:
  * BSS is already clear; palettes populate compact caches on demand.
@@ -389,6 +435,46 @@ cursor_blit:
  adda.l (a4),a0
  lea cursor_pixels,a1
  lea cursor_saved,a2
+ * Interior cursor: clip once, then copy/save rows without per-pixel bounds.
+ * Stack arguments are longs; coordinates occupy their low words.
+ move.w 2(a4),d0
+ cmp.w #304,d0
+ bhi cursor_clipped
+ move.w 6(a4),d0
+ cmp.w #184,d0
+ bhi cursor_clipped
+ move.l a0,d0
+ btst #0,d0
+ bne cursor_clipped
+ moveq #15,d5
+ tst.w d7
+ beq cursor_fast_restore
+cursor_fast_draw_row:
+ move.l (a0)+,(a2)+
+ move.l (a0)+,(a2)+
+ move.l (a0)+,(a2)+
+ move.l (a0)+,(a2)+
+ suba.w #16,a0
+ moveq #15,d6
+cursor_fast_draw_pixel:
+ move.b (a1)+,d0
+ bmi cursor_fast_transparent
+ move.b d0,(a0)
+cursor_fast_transparent:
+ addq.l #1,a0
+ dbra d6,cursor_fast_draw_pixel
+ adda.w #304,a0
+ dbra d5,cursor_fast_draw_row
+ bra cursor_finished
+cursor_fast_restore:
+ move.l (a2)+,(a0)+
+ move.l (a2)+,(a0)+
+ move.l (a2)+,(a0)+
+ move.l (a2)+,(a0)+
+ adda.w #304,a0
+ dbra d5,cursor_fast_restore
+ bra cursor_finished
+cursor_clipped:
  moveq #0,d5
 cursor_row:
  moveq #0,d6
@@ -421,6 +507,7 @@ cursor_skip:
  addq.w #1,d5
  cmp.w #16,d5
  bne cursor_row
+cursor_finished:
  st display_dirty
  rts
 * Cooperative processing: poll task only increments pending_ticks.
@@ -444,6 +531,14 @@ pump_ticks:
  move.l (a7)+,d7
  subq.l #1,d7
  bne pump_ticks
+ * Flight publishes its completed scene at FlipScreen. Keep all tick/input
+ * processing above, but defer palette/cursor dirtiness to that publication.
+ * Use the same original state flags as the flight HUD, in both variants.
+ tst.b L5eb6_a6_base+42
+ bpl pump_present
+ tst.b L5eb6_a6_base+536
+ bmi pump_done
+pump_present:
  bsr ql_present
 pump_done:
  movem.l (a7)+,d0-d7/a0-a6

@@ -16,6 +16,19 @@ text_find:
  suba.l a1,a1
 text_find_done:
  rts
+* Single-pixel callers need no span-length clipping or temporary d1 value.
+text_clear_pixel_at_a0:
+ movem.l d0/d2/a1,-(a7)
+ bsr text_find
+ move.l a1,d0
+ beq text_clear_pixel_done
+ move.l d2,d0
+ lsr.l #3,d0
+ adda.l d0,a1
+ bclr d2,(a1)
+text_clear_pixel_done:
+ movem.l (a7)+,d0/d2/a1
+ rts
 text_clear_span:
  movem.l d0-d3/a1,-(a7)
  and.l #$ffff,d1
@@ -28,34 +41,63 @@ text_clear_span:
  bls text_clear_size
  move.l d3,d1
 text_clear_size:
+ tst.l d1
+ beq text_clear_done
  move.l d2,d0
  lsr.l #3,d0
  adda.l d0,a1
+ cmp.w #1,d1
+ beq text_clear_pixel
  and.w #7,d2
-text_clear_head:
- tst.l d1
- beq text_clear_done
- tst.w d2
- beq text_clear_bytes
- bclr d2,(a1)
- subq.l #1,d1
- addq.w #1,d2
- and.w #7,d2
- bne text_clear_head
- addq.l #1,a1
+ beq text_clear_bulk
+ moveq #8,d0
+ sub.w d2,d0
+ cmp.w d0,d1
+ bcc text_clear_head_full
+ * The entire interval is within one tag byte.
+ moveq #1,d3
+ lsl.w d1,d3
+ subq.w #1,d3
+ lsl.w d2,d3
+ not.b d3
+ and.b d3,(a1)
+ bra text_clear_done
+text_clear_head_full:
+ moveq #1,d3
+ lsl.w d2,d3
+ subq.w #1,d3
+ and.b d3,(a1)+
+ sub.w d0,d1
+text_clear_bulk:
+ * Align the tag address before any 68000 word/long access.
+ cmp.w #8,d1
+ bcs text_clear_tail
+ move.l a1,d0
+ btst #0,d0
+ beq text_clear_longs
+ clr.b (a1)+
+ subq.w #8,d1
+text_clear_longs:
+ cmp.w #32,d1
+ bcs text_clear_bytes
+ clr.l (a1)+
+ sub.w #32,d1
+ bra text_clear_longs
 text_clear_bytes:
- cmp.l #8,d1
+ cmp.w #8,d1
  bcs text_clear_tail
  clr.b (a1)+
- subq.l #8,d1
+ subq.w #8,d1
  bra text_clear_bytes
 text_clear_tail:
- tst.l d1
+ tst.w d1
  beq text_clear_done
+ moveq #-1,d3
+ lsl.b d1,d3
+ and.b d3,(a1)
+ bra text_clear_done
+text_clear_pixel:
  bclr d2,(a1)
- addq.w #1,d2
- subq.l #1,d1
- bra text_clear_tail
 text_clear_done:
  movem.l (a7)+,d0-d3/a1
  rts

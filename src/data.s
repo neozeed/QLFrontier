@@ -55,4 +55,8 @@ screen_b_guard: ds.l 1
 stack_base: ds.b 65536
 stack_end:
 stack_top_guard: ds.l 1
+main_palette_keys: ds.w 256
+panel_palette_keys: ds.w 256
+native_left: ds.w 200
+native_right: ds.w 200
 mem_end:
