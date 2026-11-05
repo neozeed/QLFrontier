@@ -61,6 +61,7 @@ menu_palette_ready:
  and.w #3,d0
  adda.w d0,a2
  lea native_text,a5
+ moveq #0,d0
  move.w d7,d0
  lsl.l #8,d0
  adda.l d0,a5

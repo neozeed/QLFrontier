@@ -413,6 +413,7 @@ native_glyph_row:
  bcc native_glyph_next
  bsr native_mark_span
  lea native_text,a1
+ moveq #0,d3
  move.w d2,d3
  lsl.l #8,d3
  adda.l d3,a1
@@ -456,6 +457,7 @@ native_present_text:
  tst.b 0(a0,d7.w)
  beq native_row_done
  lea native_text,a0
+ moveq #0,d0
  move.w d7,d0
  lsl.l #8,d0
  adda.l d0,a0
